@@ -1,0 +1,37 @@
+[server]
+bind = "0.0.0.0"
+port = 8090
+
+[ha]
+url = "http://pi5.local:8123"
+token = "YOUR_HA_LONG_LIVED_TOKEN"
+
+[sprinkler]
+max_duration_secs = 1800   # 30 minutes — sécurité anti-flood
+mutex = true               # une seule vanne ouverte à la fois
+invert_logic = true        # active-low relay board (GPIO LOW = relay ON)
+
+[[zones]]
+id = "arrosage1"
+name = "Arrosage Zone 1"
+gpio = 5
+kind = "sprinkler"
+
+[[zones]]
+id = "arrosage2"
+name = "Arrosage Zone 2"
+gpio = 6
+kind = "sprinkler"
+
+[[zones]]
+id = "arrosage3"
+name = "Arrosage Zone 3"
+gpio = 13
+kind = "sprinkler"
+
+[[zones]]
+id = "arrosage4"
+name = "Arrosage Zone 4"
+gpio = 19
+kind = "sprinkler"
+# max_duration_secs = 900  # override par zone si besoin

@@ -1,0 +1,19 @@
+[Unit]
+Description=WaterPi Sprinkler Controller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/waterpi-sprinkler /etc/waterpi-sprinkler/config.toml
+Restart=on-failure
+RestartSec=5
+Environment=RUST_LOG=waterpi_sprinkler=info
+
+# Filet de sécurité systemd : si le daemon crash, fermer toutes les vannes
+# (active-low → GPIO HIGH = vanne fermée)
+ExecStopPost=/usr/bin/gpioset gpiochip0 5=1 6=1 13=1 19=1
+
+[Install]
+WantedBy=multi-user.target
