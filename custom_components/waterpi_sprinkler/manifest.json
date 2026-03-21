@@ -1,12 +1,12 @@
 {
     "domain": "waterpi_sprinkler",
     "name": "WaterPi Sprinkler",
-    "version": "1.0.0",
-    "documentation": "https://github.com/miton18/waterpi-sprinkler",
     "codeowners": ["@miton18"],
-    "requirements": [],
     "dependencies": [],
+    "documentation": "https://github.com/miton18/waterpi-sprinkler",
     "integration_type": "hub",
     "iot_class": "local_polling",
-    "issue_tracker": "https://github.com/miton18/waterpi-sprinkler/issues"
+    "issue_tracker": "https://github.com/miton18/waterpi-sprinkler/issues",
+    "requirements": [],
+    "version": "1.0.0"
 }
