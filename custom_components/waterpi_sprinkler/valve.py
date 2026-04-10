@@ -8,6 +8,7 @@ events fired by the daemon (``waterpi_sprinkler_update``).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import timedelta
 
@@ -39,17 +40,23 @@ async def async_setup_platform(
     base_url: str = hass.data[DOMAIN]["base_url"]
     session = async_get_clientsession(hass)
 
-    # Fetch initial zone list from daemon
-    try:
-        async with session.get(f"{base_url}/api/zones", timeout=10) as resp:
-            resp.raise_for_status()
-            zones = await resp.json()
-    except Exception:
-        _LOGGER.error(
-            "Cannot reach waterpi-sprinkler daemon at %s — will retry on next HA restart",
-            base_url,
-        )
-        return
+    # Fetch initial zone list from daemon (infinite retry with backoff, max 60s)
+    zones = None
+    attempt = 0
+    delay = 2
+    while zones is None:
+        attempt += 1
+        try:
+            async with session.get(f"{base_url}/api/zones", timeout=10) as resp:
+                resp.raise_for_status()
+                zones = await resp.json()
+        except Exception:
+            _LOGGER.warning(
+                "Cannot reach waterpi-sprinkler daemon at %s (attempt %d), retrying in %ds",
+                base_url, attempt, delay,
+            )
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 60)
 
     entities: list[WaterpiValve] = [
         WaterpiValve(hass, base_url, zone) for zone in zones
