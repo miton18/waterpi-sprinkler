@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=root
 ExecStart=/usr/local/bin/waterpi-sprinkler /etc/waterpi-sprinkler/config.toml
+StateDirectory=sprinkler
 Restart=on-failure
 RestartSec=5
 Environment=RUST_LOG=waterpi_sprinkler=info

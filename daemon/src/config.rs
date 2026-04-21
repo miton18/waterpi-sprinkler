@@ -61,7 +61,10 @@ impl Config {
         let content = std::fs::read_to_string(path)?;
         let config: Config = toml::from_str(&content)?;
 
-        anyhow::ensure!(!config.zones.is_empty(), "At least one zone must be configured");
+        anyhow::ensure!(
+            !config.zones.is_empty(),
+            "At least one zone must be configured"
+        );
 
         // Check for duplicate zone IDs
         let mut seen = std::collections::HashSet::new();

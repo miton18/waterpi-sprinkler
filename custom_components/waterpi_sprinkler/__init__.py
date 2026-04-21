@@ -40,5 +40,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.async_create_task(
         async_load_platform(hass, "valve", DOMAIN, {}, config)
     )
+    hass.async_create_task(
+        async_load_platform(hass, "sensor", DOMAIN, {}, config)
+    )
 
     return True

@@ -1,9 +1,9 @@
 use axum::{
+    Router,
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{get, post},
-    Router,
 };
 
 use crate::sprinkler::{self, Sprinkler, ZoneStatus};
