@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -9,6 +10,13 @@ use tracing::{info, warn};
 
 use crate::config::Config;
 use crate::ha::HaClient;
+
+fn state_dir() -> PathBuf {
+    match std::env::var("STATE_DIRECTORY") {
+        Ok(dir) => PathBuf::from(dir),
+        Err(_) => PathBuf::from("/var/lib/sprinkler"),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -27,6 +35,8 @@ pub struct ZoneStatus {
     pub max_duration_secs: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
+    /// Last time this zone was opened (persists after close).
+    pub last_opened_at: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -41,6 +51,7 @@ struct Zone {
     max_duration: Duration,
     is_open: bool,
     opened_at: Option<Instant>,
+    last_opened_at: Option<chrono::DateTime<chrono::Utc>>,
     pin: OutputPin,
     timeout_handle: Option<JoinHandle<()>>,
 }
@@ -61,6 +72,12 @@ pub fn create(config: &Config, ha_client: HaClient) -> anyhow::Result<Sprinkler>
     let invert = config.sprinkler.invert_logic;
     let mut zones = Vec::new();
 
+    // Ensure state directory exists
+    let sd = state_dir();
+    if let Err(e) = std::fs::create_dir_all(&sd) {
+        warn!("Cannot create state dir {}: {}", sd.display(), e);
+    }
+
     for zc in &config.zones {
         let mut pin = gpio.get(zc.gpio)?.into_output();
 
@@ -71,6 +88,9 @@ pub fn create(config: &Config, ha_client: HaClient) -> anyhow::Result<Sprinkler>
             pin.set_low();
         }
 
+        // Restore last_opened_at from disk
+        let last_opened_at = load_last_opened(&zc.id);
+
         zones.push(Zone {
             id: zc.id.clone(),
             name: zc.name.clone(),
@@ -79,11 +99,12 @@ pub fn create(config: &Config, ha_client: HaClient) -> anyhow::Result<Sprinkler>
             max_duration: zc.max_duration(config.sprinkler.max_duration_secs),
             is_open: false,
             opened_at: None,
+            last_opened_at,
             pin,
             timeout_handle: None,
         });
 
-        info!(zone = %zc.id, gpio = zc.gpio, "Zone initialized (closed)");
+        info!(zone = %zc.id, gpio = zc.gpio, last_opened = ?last_opened_at, "Zone initialized (closed)");
     }
 
     Ok(Arc::new(Mutex::new(SprinklerInner {
@@ -127,9 +148,12 @@ pub async fn open_zone(sprinkler: &Sprinkler, zone_id: &str) -> Result<ZoneStatu
     }
 
     // Open the requested zone
+    let now = chrono::Utc::now();
     inner.set_pin_open(idx);
     inner.zones[idx].is_open = true;
     inner.zones[idx].opened_at = Some(Instant::now());
+    inner.zones[idx].last_opened_at = Some(now);
+    save_last_opened(zone_id, now);
     info!(zone = %zone_id, "Zone opened");
 
     // Spawn a safety timeout
@@ -240,19 +264,39 @@ impl SprinklerInner {
             is_open: z.is_open,
             opened_at: z.opened_at.map(|t| {
                 let elapsed = t.elapsed();
-                let wall = chrono::Utc::now()
-                    - chrono::Duration::from_std(elapsed).unwrap_or_default();
+                let wall =
+                    chrono::Utc::now() - chrono::Duration::from_std(elapsed).unwrap_or_default();
                 wall.to_rfc3339()
             }),
             open_duration_secs: z.opened_at.map(|t| t.elapsed().as_secs()),
             max_duration_secs: z.max_duration.as_secs(),
             kind: z.kind.clone(),
+            last_opened_at: z.last_opened_at.map(|t| t.to_rfc3339()),
         }
     }
 
     fn all_statuses(&self) -> Vec<ZoneStatus> {
-        (0..self.zones.len())
-            .map(|i| self.zone_status(i))
-            .collect()
+        (0..self.zones.len()).map(|i| self.zone_status(i)).collect()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Disk persistence for last_opened_at
+// ---------------------------------------------------------------------------
+
+fn state_path(zone_id: &str) -> PathBuf {
+    state_dir().join(format!("{}.state", zone_id))
+}
+
+fn load_last_opened(zone_id: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    let path = state_path(zone_id);
+    let content = std::fs::read_to_string(&path).ok()?;
+    content.trim().parse().ok()
+}
+
+fn save_last_opened(zone_id: &str, dt: chrono::DateTime<chrono::Utc>) {
+    let path = state_path(zone_id);
+    if let Err(e) = std::fs::write(&path, dt.to_rfc3339()) {
+        warn!(zone = %zone_id, "Failed to persist last_opened_at to {}: {}", path.display(), e);
     }
 }

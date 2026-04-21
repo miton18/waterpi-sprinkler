@@ -21,7 +21,11 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|| "config.toml".into());
 
     let config = config::Config::load(&config_path)?;
-    info!(zones = config.zones.len(), port = config.server.port, "Loaded configuration");
+    info!(
+        zones = config.zones.len(),
+        port = config.server.port,
+        "Loaded configuration"
+    );
 
     let ha_client = ha::HaClient::new(&config.ha.url, &config.ha.token);
     let ctrl = sprinkler::create(&config, ha_client)?;
@@ -52,9 +56,8 @@ async fn shutdown_signal() {
 
     #[cfg(unix)]
     {
-        let mut sigterm =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("failed to register SIGTERM handler");
+        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to register SIGTERM handler");
         tokio::select! {
             _ = ctrl_c => {}
             _ = sigterm.recv() => {}
