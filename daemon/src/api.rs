@@ -6,17 +6,27 @@ use axum::{
     routing::{get, post},
 };
 
+use crate::meter::{MeterDescriptor, Meters};
 use crate::sprinkler::{self, Sprinkler, ZoneStatus};
 
-pub fn router(sprinkler: Sprinkler) -> Router {
-    Router::new()
-        .route("/api/health", get(health))
+pub fn router(sprinkler: Sprinkler, meters: Meters) -> Router {
+    let valve_routes = Router::new()
         .route("/api/zones", get(list_zones))
         .route("/api/zones/close-all", post(close_all))
         .route("/api/zones/{id}", get(get_zone))
         .route("/api/zones/{id}/open", post(open_zone))
         .route("/api/zones/{id}/close", post(close_zone))
-        .with_state(sprinkler)
+        .with_state(sprinkler);
+
+    let meter_routes = Router::new()
+        .route("/api/meters", get(list_meters))
+        .route("/api/meters/{id}", get(get_meter))
+        .with_state(meters);
+
+    Router::new()
+        .route("/api/health", get(health))
+        .merge(valve_routes)
+        .merge(meter_routes)
 }
 
 // ---------------------------------------------------------------------------
@@ -61,4 +71,19 @@ async fn close_zone(
 
 async fn close_all(State(s): State<Sprinkler>) -> Json<Vec<ZoneStatus>> {
     Json(sprinkler::close_all(&s).await)
+}
+
+// ── meters (discovery only — daemon is stateless) ──────────────────────────
+
+async fn list_meters(State(m): State<Meters>) -> Json<Vec<MeterDescriptor>> {
+    Json(m.all_descriptors())
+}
+
+async fn get_meter(
+    State(m): State<Meters>,
+    Path(id): Path<String>,
+) -> Result<Json<MeterDescriptor>, impl IntoResponse> {
+    m.get(&id)
+        .map(Json)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Meter '{}' not found", id)))
 }

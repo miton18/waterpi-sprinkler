@@ -1,6 +1,7 @@
 mod api;
 mod config;
 mod ha;
+mod meter;
 mod sprinkler;
 
 use std::net::SocketAddr;
@@ -22,21 +23,23 @@ async fn main() -> anyhow::Result<()> {
 
     let config = config::Config::load(&config_path)?;
     info!(
-        zones = config.zones.len(),
+        valves = config.zones.len(),
+        meters = config.meters.len(),
         port = config.server.port,
         "Loaded configuration"
     );
 
     let ha_client = ha::HaClient::new(&config.ha.url, &config.ha.token);
-    let ctrl = sprinkler::create(&config, ha_client)?;
+    let ctrl = sprinkler::create(&config, ha_client.clone())?;
+    let meters = meter::create(&config, ha_client)?;
 
-    let app = api::router(ctrl.clone());
+    let app = api::router(ctrl.clone(), meters);
     let addr: SocketAddr = format!("{}:{}", config.server.bind, config.server.port).parse()?;
 
     info!(%addr, "Starting waterpi-sprinkler");
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
-    // Graceful shutdown: close all valves on SIGTERM / Ctrl-C
+    // Graceful shutdown: close all valves
     let ctrl_shutdown = ctrl.clone();
 
     axum::serve(listener, app)

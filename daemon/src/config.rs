@@ -7,6 +7,8 @@ pub struct Config {
     pub ha: HaConfig,
     pub sprinkler: SprinklerConfig,
     pub zones: Vec<ZoneConfig>,
+    #[serde(default)]
+    pub meters: Vec<MeterConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -39,8 +41,23 @@ pub struct ZoneConfig {
     pub name: String,
     pub gpio: u8,
     pub max_duration_secs: Option<u64>,
-    /// Icon hint: "sprinkler", "water", "drip", etc.
+    /// Icon hint for the HA valve entity ("sprinkler", "drip", "hose", …).
     pub kind: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct MeterConfig {
+    pub id: String,
+    pub name: String,
+    pub gpio: u8,
+    /// Unit of the meter (e.g. "L"). Defaults to "L".
+    pub unit: Option<String>,
+    /// HA device_class for the sensor (e.g. "water").
+    pub device_class: Option<String>,
+    /// Debounce window for the pulse input. Defaults to 200ms.
+    pub debounce_ms: Option<u64>,
+    /// Value added to the HA sensor at each pulse. Defaults to 1.
+    pub increment_per_pulse: Option<u64>,
 }
 
 fn default_bind() -> String {
@@ -66,10 +83,27 @@ impl Config {
             "At least one zone must be configured"
         );
 
-        // Check for duplicate zone IDs
-        let mut seen = std::collections::HashSet::new();
+        // Check for duplicate IDs across zones and meters, and GPIO collisions.
+        let mut seen_ids = std::collections::HashSet::new();
+        let mut seen_gpios = std::collections::HashSet::new();
+
         for z in &config.zones {
-            anyhow::ensure!(seen.insert(&z.id), "Duplicate zone id: {}", z.id);
+            anyhow::ensure!(seen_ids.insert(z.id.clone()), "Duplicate id: {}", z.id);
+            anyhow::ensure!(
+                seen_gpios.insert(z.gpio),
+                "Duplicate GPIO {} (zone '{}')",
+                z.gpio,
+                z.id
+            );
+        }
+        for m in &config.meters {
+            anyhow::ensure!(seen_ids.insert(m.id.clone()), "Duplicate id: {}", m.id);
+            anyhow::ensure!(
+                seen_gpios.insert(m.gpio),
+                "Duplicate GPIO {} (meter '{}')",
+                m.gpio,
+                m.id
+            );
         }
 
         Ok(config)
