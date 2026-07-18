@@ -2,6 +2,7 @@ mod api;
 mod config;
 mod ha;
 mod sprinkler;
+mod switch;
 
 use std::net::SocketAddr;
 use tracing::info;
@@ -23,14 +24,16 @@ async fn main() -> anyhow::Result<()> {
     let config = config::Config::load(&config_path)?;
     info!(
         zones = config.zones.len(),
+        switches = config.switches.len(),
         port = config.server.port,
         "Loaded configuration"
     );
 
     let ha_client = ha::HaClient::new(&config.ha.url, &config.ha.token);
-    let ctrl = sprinkler::create(&config, ha_client)?;
+    let ctrl = sprinkler::create(&config, ha_client.clone())?;
+    let switches = switch::create(&config, ha_client)?;
 
-    let app = api::router(ctrl.clone());
+    let app = api::router(ctrl.clone(), switches);
     let addr: SocketAddr = format!("{}:{}", config.server.bind, config.server.port).parse()?;
 
     info!(%addr, "Starting waterpi-sprinkler");

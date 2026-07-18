@@ -7,16 +7,27 @@ use axum::{
 };
 
 use crate::sprinkler::{self, Sprinkler, ZoneStatus};
+use crate::switch::{self, Switches, SwitchStatus};
 
-pub fn router(sprinkler: Sprinkler) -> Router {
-    Router::new()
-        .route("/api/health", get(health))
+pub fn router(sprinkler: Sprinkler, switches: Switches) -> Router {
+    // Sub-routers because the two states have different types.
+    let zone_routes = Router::new()
         .route("/api/zones", get(list_zones))
         .route("/api/zones/close-all", post(close_all))
         .route("/api/zones/{id}", get(get_zone))
         .route("/api/zones/{id}/open", post(open_zone))
         .route("/api/zones/{id}/close", post(close_zone))
-        .with_state(sprinkler)
+        .with_state(sprinkler);
+
+    let switch_routes = Router::new()
+        .route("/api/switches", get(list_switches))
+        .route("/api/switches/{id}", get(get_switch))
+        .with_state(switches);
+
+    Router::new()
+        .route("/api/health", get(health))
+        .merge(zone_routes)
+        .merge(switch_routes)
 }
 
 // ---------------------------------------------------------------------------
@@ -61,4 +72,19 @@ async fn close_zone(
 
 async fn close_all(State(s): State<Sprinkler>) -> Json<Vec<ZoneStatus>> {
     Json(sprinkler::close_all(&s).await)
+}
+
+// ── switches (read-only inputs) ─────────────────────────────────────────────
+
+async fn list_switches(State(s): State<Switches>) -> Json<Vec<SwitchStatus>> {
+    Json(switch::get_all(&s))
+}
+
+async fn get_switch(
+    State(s): State<Switches>,
+    Path(id): Path<String>,
+) -> Result<Json<SwitchStatus>, impl IntoResponse> {
+    switch::get_switch(&s, &id)
+        .map(Json)
+        .map_err(|e| (StatusCode::NOT_FOUND, e))
 }

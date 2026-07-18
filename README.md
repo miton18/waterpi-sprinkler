@@ -106,6 +106,8 @@ un device "WaterPi Sprinkler".
 | POST    | `/api/zones/{id}/open`      | Ouvrir une vanne         |
 | POST    | `/api/zones/{id}/close`     | Fermer une vanne         |
 | POST    | `/api/zones/close-all`      | Fermer toutes les vannes |
+| GET     | `/api/switches`             | Liste les interrupteurs  |
+| GET     | `/api/switches/{id}`        | État d'un interrupteur   |
 
 ### Exemple de réponse
 
@@ -120,6 +122,41 @@ un device "WaterPi Sprinkler".
   "max_duration_secs": 1800
 }
 ```
+
+## Interrupteurs physiques
+
+Des interrupteurs à bascule peuvent être câblés sur des GPIO libres et
+remontent dans HA comme entités `binary_sensor.*` (état ON/OFF utilisable
+comme condition dans les automations, ex : bascule « arrosage auto ON/OFF »).
+
+**Câblage** : interrupteur entre le GPIO et GND, aucune résistance externe
+(pull-up interne activé par le daemon). Contact fermé = ligne LOW = **ON**
+(inverser avec `inverted = true`).
+
+```
+                       ┌──────────┬──────────┐
+     vanne 3 → GPIO13  │ 33    34 │ GND ◄────┼─── GND commun (option)
+     vanne 4 → GPIO19  │ 35    36 │ GPIO16 ◄─┼─── S1
+        S4 ──► GPIO26  │ 37    38 │ GPIO20 ◄─┼─── S2
+GND commun ──► GND     │ 39    40 │ GPIO21 ◄─┼─── S3
+                       └──────────┴──────────┘
+```
+
+**Configuration** (`config.toml` du daemon) :
+
+```toml
+[[switches]]
+id = "inter1"
+name = "Interrupteur 1"
+gpio = 16
+debounce_ms = 50   # optionnel, défaut 50 (0 = pas de debounce kernel)
+inverted = false   # optionnel, défaut false
+```
+
+Chaque bascule stabilisée déclenche un event `waterpi_switch_update`
+(`{id, is_on}`) sur le bus HA → mise à jour quasi instantanée, avec le
+poll (10 s) en secours. Le debounce s'appuie sur le kernel (gpio-cdev,
+Linux ≥ 5.10 — OK sur tout Raspberry Pi OS récent ; sinon `debounce_ms = 0`).
 
 ## Sécurités
 

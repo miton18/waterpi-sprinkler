@@ -35,3 +35,29 @@ name = "Arrosage Zone 4"
 gpio = 19
 kind = "sprinkler"
 # max_duration_secs = 900  # override par zone si besoin
+
+# Interrupteurs à bascule (entrées) — câblés entre GPIO et GND, pull-up interne.
+# Fermé = ligne LOW = ON (inverser avec `inverted = true`).
+# GPIO 16/20/21/26 = broches physiques 36/38/40/37, GND partagé broche 34 ou 39.
+# NB: GPIO 20/21 servent aussi au PCM/I2S — libres sauf si HAT audio un jour.
+# [[switches]]
+# id = "inter1"
+# name = "Interrupteur 1"
+# gpio = 16
+# debounce_ms = 50   # optionnel, défaut 50 (0 = pas de debounce kernel)
+# inverted = false   # optionnel, défaut false
+#
+# [[switches]]
+# id = "inter2"
+# name = "Interrupteur 2"
+# gpio = 20
+#
+# [[switches]]
+# id = "inter3"
+# name = "Interrupteur 3"
+# gpio = 21
+#
+# [[switches]]
+# id = "inter4"
+# name = "Interrupteur 4"
+# gpio = 26

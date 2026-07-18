@@ -7,6 +7,8 @@ pub struct Config {
     pub ha: HaConfig,
     pub sprinkler: SprinklerConfig,
     pub zones: Vec<ZoneConfig>,
+    #[serde(default)]
+    pub switches: Vec<SwitchConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -43,6 +45,17 @@ pub struct ZoneConfig {
     pub kind: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct SwitchConfig {
+    pub id: String,
+    pub name: String,
+    pub gpio: u8,
+    /// Debounce window in ms. Defaults to 50. 0 disables kernel debounce.
+    pub debounce_ms: Option<u64>,
+    /// Invert the on/off mapping (default: closed to GND = ON).
+    pub inverted: Option<bool>,
+}
+
 fn default_bind() -> String {
     "0.0.0.0".into()
 }
@@ -66,10 +79,26 @@ impl Config {
             "At least one zone must be configured"
         );
 
-        // Check for duplicate zone IDs
-        let mut seen = std::collections::HashSet::new();
+        // Check for duplicate IDs and GPIO collisions across zones and switches
+        let mut seen_ids = std::collections::HashSet::new();
+        let mut seen_gpios = std::collections::HashSet::new();
         for z in &config.zones {
-            anyhow::ensure!(seen.insert(&z.id), "Duplicate zone id: {}", z.id);
+            anyhow::ensure!(seen_ids.insert(&z.id), "Duplicate id: {} (zone)", z.id);
+            anyhow::ensure!(
+                seen_gpios.insert(z.gpio),
+                "Duplicate GPIO {} (zone '{}')",
+                z.gpio,
+                z.id
+            );
+        }
+        for s in &config.switches {
+            anyhow::ensure!(seen_ids.insert(&s.id), "Duplicate id: {} (switch)", s.id);
+            anyhow::ensure!(
+                seen_gpios.insert(s.gpio),
+                "Duplicate GPIO {} (switch '{}')",
+                s.gpio,
+                s.id
+            );
         }
 
         Ok(config)

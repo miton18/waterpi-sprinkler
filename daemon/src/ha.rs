@@ -19,30 +19,46 @@ impl HaClient {
         }
     }
 
-    /// Fire a `waterpi_sprinkler_update` event on HA's event bus.
-    /// The custom component listens on this event type to refresh entity state
-    /// immediately (instead of waiting for the next poll).
-    pub async fn push_state(&self, zone: &ZoneStatus) {
-        let url = format!("{}/api/events/waterpi_sprinkler_update", self.base_url);
+    /// POST an event of the given type on HA's event bus. Returns success.
+    async fn fire_event<T: serde::Serialize + ?Sized>(&self, event_type: &str, payload: &T) -> bool {
+        let url = format!("{}/api/events/{}", self.base_url, event_type);
 
         match self
             .client
             .post(&url)
             .header("Authorization", format!("Bearer {}", self.token))
             .header("Content-Type", "application/json")
-            .json(zone)
+            .json(payload)
             .send()
             .await
         {
-            Ok(resp) if resp.status().is_success() => {
-                debug!(zone = %zone.id, is_open = zone.is_open, "Pushed state to HA");
-            }
+            Ok(resp) if resp.status().is_success() => true,
             Ok(resp) => {
-                warn!(zone = %zone.id, status = %resp.status(), "HA rejected state push");
+                warn!(event = event_type, status = %resp.status(), "HA rejected event");
+                false
             }
             Err(e) => {
-                warn!(zone = %zone.id, error = %e, "Failed to push state to HA (is HA running?)");
+                warn!(event = event_type, error = %e, "Failed to fire HA event (is HA running?)");
+                false
             }
+        }
+    }
+
+    /// Fire a `waterpi_sprinkler_update` event on HA's event bus.
+    /// The custom component listens on this event type to refresh entity state
+    /// immediately (instead of waiting for the next poll).
+    pub async fn push_state(&self, zone: &ZoneStatus) {
+        if self.fire_event("waterpi_sprinkler_update", zone).await {
+            debug!(zone = %zone.id, is_open = zone.is_open, "Pushed state to HA");
+        }
+    }
+
+    /// Fire a `waterpi_switch_update` event on HA's event bus when a physical
+    /// switch changes state.
+    pub async fn push_switch_state(&self, id: &str, is_on: bool) {
+        let payload = serde_json::json!({ "id": id, "is_on": is_on });
+        if self.fire_event("waterpi_switch_update", &payload).await {
+            debug!(switch = id, is_on, "Pushed switch state to HA");
         }
     }
 }
