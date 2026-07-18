@@ -7,11 +7,11 @@ description = "GPIO sprinkler controller daemon for Raspberry Pi"
 [dependencies]
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
-rppal = { version = "0.19" }
+rppal = { version = "0.22" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+toml = "1"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "webpki-roots"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
