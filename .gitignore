@@ -1,1 +1,4 @@
 daemon/target
+__pycache__/
+*.pyc
+.claude/
