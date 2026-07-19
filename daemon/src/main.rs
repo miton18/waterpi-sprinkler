@@ -2,6 +2,7 @@ mod api;
 mod config;
 mod display;
 mod ha;
+mod meter;
 mod sprinkler;
 mod switch;
 mod weather;
@@ -26,6 +27,7 @@ async fn main() -> anyhow::Result<()> {
     let config = config::Config::load(&config_path)?;
     info!(
         zones = config.zones.len(),
+        meters = config.meters.len(),
         switches = config.switches.len(),
         port = config.server.port,
         "Loaded configuration"
@@ -33,6 +35,7 @@ async fn main() -> anyhow::Result<()> {
 
     let ha_client = ha::HaClient::new(&config.ha.url, &config.ha.token);
     let ctrl = sprinkler::create(&config, ha_client.clone())?;
+    let meters = meter::create(&config, ha_client.clone())?;
     let switches = switch::create(&config, ha_client.clone())?;
 
     // Optional OLED display: best-effort, the daemon runs fine without it.
@@ -53,13 +56,13 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let app = api::router(ctrl.clone(), switches);
+    let app = api::router(ctrl.clone(), meters, switches);
     let addr: SocketAddr = format!("{}:{}", config.server.bind, config.server.port).parse()?;
 
     info!(%addr, "Starting waterpi-sprinkler");
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
-    // Graceful shutdown: close all valves on SIGTERM / Ctrl-C
+    // Graceful shutdown: close all valves
     let ctrl_shutdown = ctrl.clone();
 
     axum::serve(listener, app)

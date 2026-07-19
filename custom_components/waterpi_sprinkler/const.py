@@ -5,6 +5,7 @@ DEFAULT_PORT = 8090
 SCAN_INTERVAL_SECS = 10
 EVENT_STATE_UPDATE = "waterpi_sprinkler_update"
 EVENT_SWITCH_UPDATE = "waterpi_switch_update"
+EVENT_METER_PULSE = "waterpi_meter_pulse"
 
 KIND_ICONS = {
     "sprinkler": "mdi:sprinkler",

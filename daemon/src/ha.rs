@@ -1,4 +1,5 @@
 use reqwest::Client;
+use serde::Serialize;
 use tracing::{debug, warn};
 
 use crate::sprinkler::ZoneStatus;
@@ -18,6 +19,13 @@ pub struct EntityState {
     pub attributes: serde_json::Value,
 }
 
+#[derive(Serialize)]
+struct MeterPulseEvent<'a> {
+    id: &'a str,
+    increment: u64,
+    unit: &'a str,
+}
+
 impl HaClient {
     pub fn new(url: &str, token: &str) -> Self {
         Self {
@@ -28,7 +36,7 @@ impl HaClient {
     }
 
     /// POST an event of the given type on HA's event bus. Returns success.
-    async fn fire_event<T: serde::Serialize + ?Sized>(&self, event_type: &str, payload: &T) -> bool {
+    async fn fire_event<T: Serialize + ?Sized>(&self, event_type: &str, payload: &T) -> bool {
         let url = format!("{}/api/events/{}", self.base_url, event_type);
 
         match self
@@ -82,6 +90,19 @@ impl HaClient {
         let payload = serde_json::json!({ "id": id, "is_on": is_on });
         if self.fire_event("waterpi_switch_update", &payload).await {
             debug!(switch = id, is_on, "Pushed switch state to HA");
+        }
+    }
+
+    /// Fire a `waterpi_meter_pulse` event on HA's event bus. The HA sensor
+    /// accumulates the increments — the daemon keeps no state.
+    pub async fn push_meter_pulse(&self, id: &str, increment: u64, unit: &str) {
+        let payload = MeterPulseEvent {
+            id,
+            increment,
+            unit,
+        };
+        if self.fire_event("waterpi_meter_pulse", &payload).await {
+            debug!(meter = id, increment, "Pushed meter pulse to HA");
         }
     }
 }

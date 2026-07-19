@@ -6,11 +6,12 @@ use axum::{
     routing::{get, post},
 };
 
+use crate::meter::{MeterDescriptor, Meters};
 use crate::sprinkler::{self, Sprinkler, ZoneStatus};
 use crate::switch::{self, Switches, SwitchStatus};
 
-pub fn router(sprinkler: Sprinkler, switches: Switches) -> Router {
-    // Sub-routers because the two states have different types.
+pub fn router(sprinkler: Sprinkler, meters: Meters, switches: Switches) -> Router {
+    // Sub-routers because the states have different types.
     let zone_routes = Router::new()
         .route("/api/zones", get(list_zones))
         .route("/api/zones/close-all", post(close_all))
@@ -18,6 +19,11 @@ pub fn router(sprinkler: Sprinkler, switches: Switches) -> Router {
         .route("/api/zones/{id}/open", post(open_zone))
         .route("/api/zones/{id}/close", post(close_zone))
         .with_state(sprinkler);
+
+    let meter_routes = Router::new()
+        .route("/api/meters", get(list_meters))
+        .route("/api/meters/{id}", get(get_meter))
+        .with_state(meters);
 
     let switch_routes = Router::new()
         .route("/api/switches", get(list_switches))
@@ -27,6 +33,7 @@ pub fn router(sprinkler: Sprinkler, switches: Switches) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .merge(zone_routes)
+        .merge(meter_routes)
         .merge(switch_routes)
 }
 
@@ -72,6 +79,21 @@ async fn close_zone(
 
 async fn close_all(State(s): State<Sprinkler>) -> Json<Vec<ZoneStatus>> {
     Json(sprinkler::close_all(&s).await)
+}
+
+// ── meters (discovery only — daemon is stateless) ──────────────────────────
+
+async fn list_meters(State(m): State<Meters>) -> Json<Vec<MeterDescriptor>> {
+    Json(m.all_descriptors())
+}
+
+async fn get_meter(
+    State(m): State<Meters>,
+    Path(id): Path<String>,
+) -> Result<Json<MeterDescriptor>, impl IntoResponse> {
+    m.get(&id)
+        .map(Json)
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Meter '{}' not found", id)))
 }
 
 // ── switches (read-only inputs) ─────────────────────────────────────────────

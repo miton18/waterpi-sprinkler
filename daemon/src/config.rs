@@ -8,6 +8,8 @@ pub struct Config {
     pub sprinkler: SprinklerConfig,
     pub zones: Vec<ZoneConfig>,
     #[serde(default)]
+    pub meters: Vec<MeterConfig>,
+    #[serde(default)]
     pub switches: Vec<SwitchConfig>,
     #[serde(default)]
     pub display: Option<DisplayConfig>,
@@ -43,8 +45,23 @@ pub struct ZoneConfig {
     pub name: String,
     pub gpio: u8,
     pub max_duration_secs: Option<u64>,
-    /// Icon hint: "sprinkler", "water", "drip", etc.
+    /// Icon hint for the HA valve entity ("sprinkler", "drip", "hose", …).
     pub kind: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct MeterConfig {
+    pub id: String,
+    pub name: String,
+    pub gpio: u8,
+    /// Unit of the meter (e.g. "L"). Defaults to "L".
+    pub unit: Option<String>,
+    /// HA device_class for the sensor (e.g. "water").
+    pub device_class: Option<String>,
+    /// Debounce window for the pulse input. Defaults to 200ms.
+    pub debounce_ms: Option<u64>,
+    /// Value added to the HA sensor at each pulse. Defaults to 1.
+    pub increment_per_pulse: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -114,7 +131,8 @@ impl Config {
             "At least one zone must be configured"
         );
 
-        // Check for duplicate IDs and GPIO collisions across zones and switches
+        // Check for duplicate IDs and GPIO collisions across zones, meters
+        // and switches.
         let mut seen_ids = std::collections::HashSet::new();
         let mut seen_gpios = std::collections::HashSet::new();
         for z in &config.zones {
@@ -124,6 +142,15 @@ impl Config {
                 "Duplicate GPIO {} (zone '{}')",
                 z.gpio,
                 z.id
+            );
+        }
+        for m in &config.meters {
+            anyhow::ensure!(seen_ids.insert(&m.id), "Duplicate id: {} (meter)", m.id);
+            anyhow::ensure!(
+                seen_gpios.insert(m.gpio),
+                "Duplicate GPIO {} (meter '{}')",
+                m.gpio,
+                m.id
             );
         }
         for s in &config.switches {

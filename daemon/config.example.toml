@@ -36,6 +36,18 @@ gpio = 19
 kind = "sprinkler"
 # max_duration_secs = 900  # override par zone si besoin
 
+# Compteur d'eau Honeywell V200 (1 pulse = 1 litre)
+# Le daemon est stateless : à chaque pulse, un event `waterpi_meter_pulse`
+# est envoyé à HA, qui accumule lui-même la valeur.
+[[meters]]
+id = "compteur_eau"
+name = "Compteur d'eau"
+gpio = 17
+unit = "L"
+device_class = "water"
+debounce_ms = 200
+# increment_per_pulse = 1   # défaut, override si 1 pulse ≠ 1 unité
+
 # Interrupteurs à bascule (entrées) — câblés entre GPIO et GND, pull-up interne.
 # Fermé = ligne LOW = ON (inverser avec `inverted = true`).
 # GPIO 16/20/21/26 = broches physiques 36/38/40/37, GND partagé broche 34 ou 39.
