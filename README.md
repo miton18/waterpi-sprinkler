@@ -158,6 +158,38 @@ Chaque bascule stabilisée déclenche un event `waterpi_switch_update`
 poll (10 s) en secours. Le debounce s'appuie sur le kernel (gpio-cdev,
 Linux ≥ 5.10 — OK sur tout Raspberry Pi OS récent ; sinon `debounce_ms = 0`).
 
+## Écran OLED (optionnel)
+
+Un écran **SSD1306 0.96" 128x64 I2C** branché sur waterpi affiche l'état en
+direct avec un layout adaptatif :
+
+- **Au repos** : météo actuelle (température + condition en français, lue
+  depuis une entité `weather.*` de HA via l'API REST) — ou une horloge si
+  aucune entité n'est configurée. États des interrupteurs en pied d'écran.
+- **Pendant un arrosage** : nom de la zone, pourcentage écoulé en gros,
+  barre de progression pleine largeur, temps restant. Interrupteurs toujours
+  visibles en pied d'écran.
+
+**Câblage** : VCC → broche 1 (3V3), GND → broche 6 ou 9, SDA → broche 3
+(GPIO2), SCL → broche 5 (GPIO3).
+
+**Prérequis sur waterpi** :
+
+```bash
+sudo raspi-config nonint do_i2c 0        # active l'I2C (/dev/i2c-1)
+# Recommandé : I2C à 400 kHz (flush ~25 ms au lieu de ~93 ms)
+# dans /boot/firmware/config.txt (ou /boot/config.txt sur les anciens OS) :
+#   dtparam=i2c_arm_baudrate=400000
+i2cdetect -y 1                            # doit montrer "3c"
+```
+
+Configuration : section `[display]` du `config.toml` (voir
+`config.example.toml`). L'écran est totalement optionnel : section absente =
+pas d'écran, écran débranché = warning et le daemon continue normalement
+(re-détection automatique s'il revient). Le service tourne en root, aucun
+groupe `i2c` à configurer (ajouter `SupplementaryGroups=i2c` au service si
+un jour il tourne sous un utilisateur dédié).
+
 ## Sécurités
 
 1. **Durée max** : chaque zone se ferme automatiquement après 30 min (configurable)

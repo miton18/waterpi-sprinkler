@@ -7,7 +7,9 @@ description = "GPIO sprinkler controller daemon for Raspberry Pi"
 [dependencies]
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
-rppal = { version = "0.22" }
+rppal = { version = "0.22", features = ["hal"] }
+ssd1306 = "0.10"
+embedded-graphics = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1"

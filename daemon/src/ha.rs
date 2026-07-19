@@ -10,6 +10,14 @@ pub struct HaClient {
     token: String,
 }
 
+/// Subset of HA's `GET /api/states/{entity_id}` response.
+#[derive(Debug, serde::Deserialize)]
+pub struct EntityState {
+    pub state: String,
+    #[serde(default)]
+    pub attributes: serde_json::Value,
+}
+
 impl HaClient {
     pub fn new(url: &str, token: &str) -> Self {
         Self {
@@ -51,6 +59,21 @@ impl HaClient {
         if self.fire_event("waterpi_sprinkler_update", zone).await {
             debug!(zone = %zone.id, is_open = zone.is_open, "Pushed state to HA");
         }
+    }
+
+    /// Fetch the current state of an HA entity (`GET /api/states/{entity_id}`).
+    /// Errors bubble up; the caller decides how tolerant to be.
+    pub async fn get_state(&self, entity_id: &str) -> anyhow::Result<EntityState> {
+        let url = format!("{}/api/states/{}", self.base_url, entity_id);
+        let resp = self
+            .client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(resp.json().await?)
     }
 
     /// Fire a `waterpi_switch_update` event on HA's event bus when a physical

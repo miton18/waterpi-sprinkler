@@ -1,11 +1,13 @@
 mod api;
 mod config;
+mod display;
 mod ha;
 mod sprinkler;
 mod switch;
+mod weather;
 
 use std::net::SocketAddr;
-use tracing::info;
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -31,7 +33,25 @@ async fn main() -> anyhow::Result<()> {
 
     let ha_client = ha::HaClient::new(&config.ha.url, &config.ha.token);
     let ctrl = sprinkler::create(&config, ha_client.clone())?;
-    let switches = switch::create(&config, ha_client)?;
+    let switches = switch::create(&config, ha_client.clone())?;
+
+    // Optional OLED display: best-effort, the daemon runs fine without it.
+    let mut display_handle: Option<display::DisplayHandle> = None;
+    if let Some(dc) = config.display.as_ref().filter(|d| d.enabled) {
+        let weather_cache: weather::WeatherCache = Default::default();
+        if let Some(entity) = &dc.weather_entity {
+            weather::spawn_poller(
+                ha_client.clone(),
+                entity.clone(),
+                weather_cache.clone(),
+                std::time::Duration::from_secs(dc.weather_refresh_secs),
+            );
+        }
+        match display::spawn(dc, ctrl.clone(), switches.clone(), weather_cache) {
+            Ok(h) => display_handle = Some(h),
+            Err(e) => warn!(error = %e, "OLED init failed — continuing without display"),
+        }
+    }
 
     let app = api::router(ctrl.clone(), switches);
     let addr: SocketAddr = format!("{}:{}", config.server.bind, config.server.port).parse()?;
@@ -47,6 +67,9 @@ async fn main() -> anyhow::Result<()> {
             shutdown_signal().await;
             info!("Shutdown signal received — closing all valves");
             sprinkler::close_all(&ctrl_shutdown).await;
+            if let Some(h) = display_handle {
+                h.shutdown().await;
+            }
             info!("All valves closed, exiting");
         })
         .await?;

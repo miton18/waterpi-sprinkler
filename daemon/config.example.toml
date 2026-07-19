@@ -61,3 +61,13 @@ kind = "sprinkler"
 # id = "inter4"
 # name = "Interrupteur 4"
 # gpio = 26
+
+# Écran OLED SSD1306 0.96" 128x64 en I2C (broches 3/5 = GPIO2 SDA / GPIO3 SCL).
+# Section absente = pas d'écran. Init impossible => warning, le daemon continue.
+# [display]
+# enabled = true
+# i2c_bus = 1                       # défaut 1 (/dev/i2c-1)
+# address = 0x3C                    # défaut 0x3C
+# weather_entity = "weather.maison" # optionnel : météo HA au repos (sinon horloge)
+# refresh_secs = 1                  # défaut 1
+# weather_refresh_secs = 300        # défaut 300

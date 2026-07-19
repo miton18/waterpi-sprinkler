@@ -9,6 +9,8 @@ pub struct Config {
     pub zones: Vec<ZoneConfig>,
     #[serde(default)]
     pub switches: Vec<SwitchConfig>,
+    #[serde(default)]
+    pub display: Option<DisplayConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -56,8 +58,41 @@ pub struct SwitchConfig {
     pub inverted: Option<bool>,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct DisplayConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// I2C bus number (/dev/i2c-N). Defaults to 1.
+    #[serde(default = "default_i2c_bus")]
+    pub i2c_bus: u8,
+    /// I2C address of the SSD1306. Defaults to 0x3C.
+    #[serde(default = "default_i2c_address")]
+    pub address: u8,
+    /// HA weather entity shown on the idle view (e.g. "weather.maison").
+    /// None: a clock is shown instead.
+    pub weather_entity: Option<String>,
+    /// Render interval in seconds. Defaults to 1.
+    #[serde(default = "default_refresh_secs")]
+    pub refresh_secs: u64,
+    /// Weather poll interval in seconds. Defaults to 300.
+    #[serde(default = "default_weather_refresh_secs")]
+    pub weather_refresh_secs: u64,
+}
+
 fn default_bind() -> String {
     "0.0.0.0".into()
+}
+fn default_i2c_bus() -> u8 {
+    1
+}
+fn default_i2c_address() -> u8 {
+    0x3C
+}
+fn default_refresh_secs() -> u64 {
+    1
+}
+fn default_weather_refresh_secs() -> u64 {
+    300
 }
 fn default_port() -> u16 {
     8090
@@ -98,6 +133,14 @@ impl Config {
                 "Duplicate GPIO {} (switch '{}')",
                 s.gpio,
                 s.id
+            );
+        }
+
+        if let Some(d) = &config.display {
+            anyhow::ensure!(d.refresh_secs >= 1, "display.refresh_secs must be >= 1");
+            anyhow::ensure!(
+                d.weather_refresh_secs >= 10,
+                "display.weather_refresh_secs must be >= 10"
             );
         }
 
