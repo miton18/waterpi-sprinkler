@@ -160,8 +160,10 @@ Linux ≥ 5.10 — OK sur tout Raspberry Pi OS récent ; sinon `debounce_ms = 0`
 
 ## Écran OLED (optionnel)
 
-Un écran **SSD1306 0.96" 128x64 I2C** branché sur waterpi affiche l'état en
-direct avec un layout adaptatif :
+Un écran OLED **128x64 I2C** branché sur waterpi affiche l'état en direct.
+Deux contrôleurs supportés (clé `driver` de la section `[display]`) :
+**SSD1306** (0.96", défaut) et **SSD1309** (2.42") — même résolution, même
+affichage. Layout adaptatif :
 
 - **Au repos** : météo actuelle (température + condition en français, lue
   depuis une entité `weather.*` de HA via l'API REST) — ou une horloge si
@@ -172,6 +174,19 @@ direct avec un layout adaptatif :
 
 **Câblage** : VCC → broche 1 (3V3), GND → broche 6 ou 9, SDA → broche 3
 (GPIO2), SCL → broche 5 (GPIO3).
+
+**Spécifique SSD1309 2.42"** :
+- Les modules **7 broches** doivent être configurés en I2C (jumpers à souder
+  au dos sur la plupart des cartes) et leur broche **RES/RST doit être
+  gérée** : câbler sur un GPIO libre (ex. GPIO 4, broche 7) et déclarer
+  `reset_gpio = 4` — le daemon applique la séquence de reset requise à
+  l'init. Les modules **I2C 4 broches** ont un auto-reset intégré : omettre
+  `reset_gpio`.
+- L'adresse est 0x3C ou 0x3D selon le strap SA0/DC du module
+  (`i2cdetect -y 1` pour vérifier, clé `address`).
+- `contrast = 0..255` ajuste la luminosité à l'init (optionnel).
+- Dépannage : beaucoup de panneaux SSD1309 répondent aussi au driver
+  `ssd1306` — un essai gratuit si l'écran reste noir.
 
 **Prérequis sur waterpi** :
 

@@ -9,6 +9,8 @@ axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 rppal = { version = "0.22", features = ["hal"] }
 ssd1306 = "0.10"
+ssd1309 = "0.4"
+display-interface-i2c = "0.4"
 embedded-graphics = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -1,4 +1,5 @@
-//! SSD1306 128x64 OLED status display (I2C).
+//! 128x64 OLED status display (I2C) — SSD1306 (0.96") or SSD1309 (2.42"),
+//! selectable via the `driver` config key.
 //!
 //! Adaptive layout: idle shows the weather (or a clock when no weather entity
 //! is configured), watering shows the running zone with a progress bar. The
@@ -23,23 +24,93 @@ use embedded_graphics::{
     primitives::{Line, PrimitiveStyle, Rectangle},
     text::{Baseline, Text},
 };
+use display_interface_i2c::I2CInterface as I2CInterface04;
 use rppal::i2c::I2c;
 use ssd1306::{
     I2CDisplayInterface, Ssd1306,
     mode::{BufferedGraphicsMode, DisplayConfig as _},
-    prelude::I2CInterface,
+    prelude::{Brightness, I2CInterface},
     rotation::DisplayRotation,
     size::DisplaySize128x64,
 };
+use ssd1309::{Builder, mode::GraphicsMode};
 use tokio::sync::oneshot;
 use tracing::{info, warn};
 
-use crate::config::DisplayConfig as DisplayCfg;
+use crate::config::{DisplayConfig as DisplayCfg, DisplayDriver};
 use crate::sprinkler::{self, Sprinkler};
 use crate::switch::{self, Switches};
 use crate::weather::{self, WeatherCache};
 
-type Oled = Ssd1306<I2CInterface<I2c>, DisplaySize128x64, BufferedGraphicsMode<DisplaySize128x64>>;
+type Oled1306 =
+    Ssd1306<I2CInterface<I2c>, DisplaySize128x64, BufferedGraphicsMode<DisplaySize128x64>>;
+type Oled1309 = GraphicsMode<I2CInterface04<I2c>>;
+
+/// The two supported panels behind one dispatch surface. All errors are
+/// mapped to `String` so the two same-named `DisplayError` types (from
+/// display-interface 0.4 and 0.5) never meet.
+enum Panel {
+    Ssd1306(Oled1306),
+    Ssd1309 {
+        display: Oled1309,
+        // Held for the process lifetime: rppal reverts a dropped pin to
+        // input, which would leave RES floating.
+        reset_pin: Option<rppal::gpio::OutputPin>,
+    },
+}
+
+impl Panel {
+    /// Reset (ssd1309 with a wired RES pin only), init, apply contrast.
+    /// Also used by the failure-recovery path, so the contrast survives a
+    /// panel power-cycle.
+    fn init(&mut self, contrast: Option<u8>) -> Result<(), String> {
+        match self {
+            Panel::Ssd1306(d) => {
+                d.init().map_err(|e| format!("{e:?}"))?;
+                if let Some(c) = contrast {
+                    d.set_brightness(Brightness::custom(0x2, c))
+                        .map_err(|e| format!("{e:?}"))?;
+                }
+            }
+            Panel::Ssd1309 { display, reset_pin } => {
+                if let Some(pin) = reset_pin {
+                    // rppal's OutputPin error type is Infallible.
+                    let _ = display.reset(pin, &mut rppal::hal::Delay::new());
+                }
+                display.init().map_err(|e| format!("{e:?}"))?;
+                if let Some(c) = contrast {
+                    display.set_contrast(c).map_err(|e| format!("{e:?}"))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn clear_buffer(&mut self) {
+        match self {
+            Panel::Ssd1306(d) => d.clear_buffer(),
+            Panel::Ssd1309 { display, .. } => display.clear(),
+        }
+    }
+
+    fn flush(&mut self) -> Result<(), String> {
+        match self {
+            Panel::Ssd1306(d) => d.flush().map_err(|e| format!("{e:?}")),
+            Panel::Ssd1309 { display, .. } => display.flush().map_err(|e| format!("{e:?}")),
+        }
+    }
+
+    fn set_display_on(&mut self, on: bool) {
+        match self {
+            Panel::Ssd1306(d) => {
+                let _ = d.set_display_on(on);
+            }
+            Panel::Ssd1309 { display, .. } => {
+                let _ = display.display_on(on);
+            }
+        }
+    }
+}
 
 // Every N consecutive render failures, try a re-init (recovers a power-cycled
 // panel); warn once at the first failure then every LOG_EVERY ticks.
@@ -69,13 +140,41 @@ pub fn spawn(
     weather: WeatherCache,
 ) -> anyhow::Result<DisplayHandle> {
     let i2c = I2c::with_bus(cfg.i2c_bus)?;
-    let iface = I2CDisplayInterface::new_custom_address(i2c, cfg.address);
-    let mut display = Ssd1306::new(iface, DisplaySize128x64, DisplayRotation::Rotate0)
-        .into_buffered_graphics_mode();
-    display
-        .init()
-        .map_err(|e| anyhow::anyhow!("SSD1306 init failed (bus {}, addr 0x{:02X}): {e:?}", cfg.i2c_bus, cfg.address))?;
-    info!(bus = cfg.i2c_bus, address = format!("0x{:02X}", cfg.address), "OLED initialized");
+    let driver = cfg.driver();
+    let mut panel = match driver {
+        DisplayDriver::Ssd1306 => {
+            let iface = I2CDisplayInterface::new_custom_address(i2c, cfg.address);
+            Panel::Ssd1306(
+                Ssd1306::new(iface, DisplaySize128x64, DisplayRotation::Rotate0)
+                    .into_buffered_graphics_mode(),
+            )
+        }
+        DisplayDriver::Ssd1309 => {
+            // 0x40 = SSD13xx "data" control byte.
+            let iface = I2CInterface04::new(i2c, cfg.address, 0x40);
+            let display: Oled1309 = Builder::new().connect(iface).into();
+            let reset_pin = match cfg.reset_gpio {
+                Some(n) => Some(rppal::gpio::Gpio::new()?.get(n)?.into_output()),
+                None => None,
+            };
+            Panel::Ssd1309 { display, reset_pin }
+        }
+    };
+    let contrast = cfg.contrast;
+    panel.init(contrast).map_err(|e| {
+        anyhow::anyhow!(
+            "{} init failed (bus {}, addr 0x{:02X}): {e}",
+            driver.name(),
+            cfg.i2c_bus,
+            cfg.address
+        )
+    })?;
+    info!(
+        driver = driver.name(),
+        bus = cfg.i2c_bus,
+        address = format!("0x{:02X}", cfg.address),
+        "OLED initialized"
+    );
 
     let refresh = Duration::from_secs(cfg.refresh_secs);
     let has_weather = cfg.weather_entity.is_some();
@@ -84,7 +183,7 @@ pub fn spawn(
     let join = tokio::spawn(async move {
         let mut ticker = tokio::time::interval(refresh);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        let mut display = Some(display);
+        let mut display = Some(panel);
         let mut consecutive_errors: u32 = 0;
 
         loop {
@@ -97,7 +196,7 @@ pub fn spawn(
                         consecutive_errors > 0 && consecutive_errors.is_multiple_of(REINIT_EVERY);
                     let (d, res) = tokio::task::spawn_blocking(move || {
                         if reinit {
-                            let _ = d.init();
+                            let _ = d.init(contrast);
                         }
                         let res = render(&mut d, &frame);
                         (d, res)
@@ -124,7 +223,7 @@ pub fn spawn(
             let _ = tokio::task::spawn_blocking(move || {
                 d.clear_buffer();
                 let _ = d.flush();
-                let _ = d.set_display_on(false);
+                d.set_display_on(false);
             })
             .await;
         }
@@ -205,19 +304,31 @@ fn watering_pct(elapsed: u64, max: u64) -> u8 {
 // Rendering (blocking; draws into the framebuffer then flushes over I2C)
 // ---------------------------------------------------------------------------
 
-/// Drawing into the framebuffer is infallible; only the I2C flush can fail.
-fn render(display: &mut Oled, frame: &Frame) -> Result<(), String> {
+fn render(panel: &mut Panel, frame: &Frame) -> Result<(), String> {
+    panel.clear_buffer();
+    match panel {
+        Panel::Ssd1306(d) => draw_frame(d, frame).map_err(|e| format!("{e:?}"))?,
+        Panel::Ssd1309 { display, .. } => draw_frame(display, frame).map_err(|e| format!("{e:?}"))?,
+    }
+    panel.flush()
+}
+
+/// Draw a frame into any 128x64 monochrome target. Framebuffer writes are
+/// infallible in practice for both drivers; only the I2C flush can fail.
+fn draw_frame<D>(display: &mut D, frame: &Frame) -> Result<(), D::Error>
+where
+    D: DrawTarget<Color = BinaryColor>,
+    D::Error: core::fmt::Debug,
+{
     let small = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
     let bold = MonoTextStyle::new(&FONT_7X13_BOLD, BinaryColor::On);
     let big = MonoTextStyle::new(&FONT_10X20, BinaryColor::On);
     let stroke = PrimitiveStyle::with_stroke(BinaryColor::On, 1);
     let fill = PrimitiveStyle::with_fill(BinaryColor::On);
 
-    display.clear_buffer();
-
     match &frame.view {
         View::IdleClock { time } => {
-            draw_centered(display, time, &big, 10, 11);
+            draw_centered(display, time, &big, 10, 11)?;
         }
         View::IdleWeather {
             temperature,
@@ -227,10 +338,10 @@ fn render(display: &mut Oled, frame: &Frame) -> Result<(), String> {
                 Some(t) => format!("{:.0}°", t),
                 None => "--°".to_string(),
             };
-            draw_centered(display, &temp, &big, 10, 2);
+            draw_centered(display, &temp, &big, 10, 2)?;
             if let Some(c) = condition {
                 let label = truncate_chars(weather::condition_fr(c), 21);
-                draw_centered(display, &label, &small, 6, 26);
+                draw_centered(display, &label, &small, 6, 26)?;
             }
         }
         View::Watering {
@@ -239,27 +350,20 @@ fn render(display: &mut Oled, frame: &Frame) -> Result<(), String> {
             remaining_secs,
         } => {
             let name = truncate_chars(zone_name, 18);
-            Text::with_baseline(&name, Point::new(0, 0), bold, Baseline::Top)
-                .draw(display)
-                .unwrap();
+            Text::with_baseline(&name, Point::new(0, 0), bold, Baseline::Top).draw(display)?;
             let pct_text = format!("{}%", pct);
-            Text::with_baseline(&pct_text, Point::new(0, 14), big, Baseline::Top)
-                .draw(display)
-                .unwrap();
+            Text::with_baseline(&pct_text, Point::new(0, 14), big, Baseline::Top).draw(display)?;
             let remaining = fmt_remaining(*remaining_secs);
             Text::with_baseline(&remaining, Point::new(62, 19), small, Baseline::Top)
-                .draw(display)
-                .unwrap();
+                .draw(display)?;
             Rectangle::new(Point::new(0, 35), Size::new(128, 6))
                 .into_styled(stroke)
-                .draw(display)
-                .unwrap();
+                .draw(display)?;
             let w = *pct as u32 * 124 / 100;
             if w > 0 {
                 Rectangle::new(Point::new(2, 37), Size::new(w, 2))
                     .into_styled(fill)
-                    .draw(display)
-                    .unwrap();
+                    .draw(display)?;
             }
         }
     }
@@ -268,24 +372,30 @@ fn render(display: &mut Oled, frame: &Frame) -> Result<(), String> {
     if !frame.switches.is_empty() {
         Line::new(Point::new(0, 42), Point::new(127, 42))
             .into_styled(stroke)
-            .draw(display)
-            .unwrap();
+            .draw(display)?;
         for (i, line) in switch_lines(&frame.switches).iter().enumerate() {
             Text::with_baseline(line, Point::new(0, 44 + 10 * i as i32), small, Baseline::Top)
-                .draw(display)
-                .unwrap();
+                .draw(display)?;
         }
     }
 
-    display.flush().map_err(|e| format!("{e:?}"))
+    Ok(())
 }
 
-fn draw_centered(display: &mut Oled, text: &str, style: &MonoTextStyle<'_, BinaryColor>, char_w: usize, y: i32) {
+fn draw_centered<D>(
+    display: &mut D,
+    text: &str,
+    style: &MonoTextStyle<'_, BinaryColor>,
+    char_w: usize,
+    y: i32,
+) -> Result<(), D::Error>
+where
+    D: DrawTarget<Color = BinaryColor>,
+{
     let width = text.chars().count() * char_w;
     let x = (128usize.saturating_sub(width) / 2) as i32;
-    Text::with_baseline(text, Point::new(x, y), *style, Baseline::Top)
-        .draw(display)
-        .unwrap();
+    Text::with_baseline(text, Point::new(x, y), *style, Baseline::Top).draw(display)?;
+    Ok(())
 }
 
 /// Two switches per 21-column line: `Name123 ON Name456 --`.

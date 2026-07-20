@@ -256,9 +256,25 @@ dependencies = [
 
 [[package]]
 name = "display-interface"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7517c040926d7b02b111884aa089177db80878533127f7c1b480d852c5fb4112"
+
+[[package]]
+name = "display-interface"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ba2aab1ef3793e6f7804162debb5ac5edb93b3d650fbcc5aeb72fcd0e6c03a0"
+
+[[package]]
+name = "display-interface-i2c"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4895cd4e54e5536ef370d7f1eec787aad8275dd8ad15815aebfa71dd847b4ebf"
+dependencies = [
+ "display-interface 0.4.1",
+ "embedded-hal 0.2.7",
+]
 
 [[package]]
 name = "display-interface-i2c"
@@ -266,7 +282,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d964fa85bbbb5a6ecd06e58699407ac5dc3e3ad72dac0ab7e6b0d00a1cd262d"
 dependencies = [
- "display-interface",
+ "display-interface 0.5.0",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
 ]
@@ -278,7 +294,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f86b9ec30048b1955da2038fcc3c017f419ab21bb0001879d16c0a3749dc6b7a"
 dependencies = [
  "byte-slice-cast",
- "display-interface",
+ "display-interface 0.5.0",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
 ]
@@ -1491,12 +1507,23 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ea6aac2d078bbc71d9b8ac3f657335311f3b6625e9a1a96ccc29f5abfa77c56"
 dependencies = [
- "display-interface",
- "display-interface-i2c",
+ "display-interface 0.5.0",
+ "display-interface-i2c 0.5.0",
  "display-interface-spi",
  "embedded-graphics-core",
  "embedded-hal 1.0.0",
  "maybe-async-cfg",
+]
+
+[[package]]
+name = "ssd1309"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce02bfbe5b946b770614c51ef0c17acf544a9a26bf21be986eb28e91d7e875b6"
+dependencies = [
+ "display-interface 0.4.1",
+ "embedded-graphics-core",
+ "embedded-hal 0.2.7",
 ]
 
 [[package]]
@@ -1959,12 +1986,14 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
+ "display-interface-i2c 0.4.0",
  "embedded-graphics",
  "reqwest",
  "rppal",
  "serde",
  "serde_json",
  "ssd1306",
+ "ssd1309",
  "tokio",
  "toml",
  "tracing",

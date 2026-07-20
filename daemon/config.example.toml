@@ -74,12 +74,17 @@ debounce_ms = 200
 # name = "Interrupteur 4"
 # gpio = 26
 
-# Écran OLED SSD1306 0.96" 128x64 en I2C (broches 3/5 = GPIO2 SDA / GPIO3 SCL).
+# Écran OLED I2C 128x64 (broches 3/5 = GPIO2 SDA / GPIO3 SCL) :
+# SSD1306 0.96" (défaut) ou SSD1309 2.42".
 # Section absente = pas d'écran. Init impossible => warning, le daemon continue.
 # [display]
 # enabled = true
+# driver = "ssd1306"                # "ssd1306" (défaut) ou "ssd1309" (2.42")
 # i2c_bus = 1                       # défaut 1 (/dev/i2c-1)
-# address = 0x3C                    # défaut 0x3C
+# address = 0x3C                    # défaut 0x3C (certains modules : 0x3D)
+# reset_gpio = 4                    # ssd1309 avec broche RST/RES -> GPIO libre (ex. 4, broche 7)
+#                                   # module I2C 4 broches (auto-reset intégré) : omettre
+# contrast = 255                    # 0-255, optionnel (255 = luminosité max)
 # weather_entity = "weather.maison" # optionnel : météo HA au repos (sinon horloge)
 # refresh_secs = 1                  # défaut 1
 # weather_refresh_secs = 300        # défaut 300
